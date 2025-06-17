@@ -1,0 +1,309 @@
+#!/bin/sh
+
+
+# set global variables
+PROGNAME=${0##*/}
+VERSION="0.1.0"
+PROGPATH=$(readlink -f "$0")
+
+COLOUR_SET_R="\033[0;31m"
+COLOUR_SET_G="\033[0;32m"
+COLOUR_SET_Y="\033[0;33m"
+COLOUR_SET_B="\033[0;34m"
+COLOUR_SET_M="\033[0;35m"
+COLOUR_SET_C="\033[0;36m"
+COLOUR_SET_W="\033[0;37m"
+COLOUR_END="\033[0m"
+
+
+help_usage(){
+  cat <<EOT
+Usage: vix ...
+  help
+  version
+  new PATH [--module MODULE] [--app APP]
+  build
+  test
+  run
+  clean
+EOT
+  exit 0
+}
+
+help_version(){
+  printf "%s: v%s\n" "${PROGNAME}" "${VERSION}"
+}
+
+help_tbd(){
+  printf "This feature is not implemented yet...\n"
+}
+
+perror(){
+  printf "${COLOUR_SET_R}[-] ${COLOUR_END} %s\n" "${@}" >&2
+  exit 1
+}
+
+pinfo(){
+  printf "${COLOUR_SET_B}[+] ${COLOUR_END} %s\n" "${@}" >&2
+}
+
+paction(){
+  printf "${COLOUR_SET_G}[\*] ${COLOUR_END} %s\n" "${@}" >&2
+}
+
+
+confirm_create_path(){
+  printf  "The directory \"${PATH_ARG}\" already exists."
+  printf  " Are you sure you want to continue?"
+  read -p " [yN] " yesno
+  echo "${yesno}"
+  exit 0
+}
+
+check_path(){
+  #paction "check_path"
+  stat "$PATH_ARG" >/dev/null 2>&1 && confirm_create_path
+}
+
+create_path(){
+  paction "Creating ${PATHBASE}"
+  mkdir   -p "${PATH_ARG}"
+}
+
+create_readme(){
+  paction "Creating ${PATHBASE}/README.md"
+  cat <<EOF > ${PATH_ARG}/README.md
+# ${APP}
+
+**TODO: Add description**
+
+## Building
+
+\`\`\`
+vix build
+\`\`\`
+
+## Testing
+
+\`\`\`
+vix test
+\`\`\`
+
+EOF
+}
+
+create_gitattributes(){
+  paction "Creating ${PATHBASE}/.gitattributes"
+  cat <<EOF > ${PATH_ARG}/.gitattributes
+# Set the language to Oberon
+*.Mod linguist-language=Oberon
+*.mod linguist-language=Oberon
+EOF
+}
+
+create_gitignore(){
+  paction "Creating ${PATHBASE}/.gitignore"
+  cat <<EOF > ${PATH_ARG}/.gitignore
+build
+release
+EOF
+}
+
+create_vipakfile(){
+  paction "Creating ${PATHBASE}/vipakfile"
+  cat <<EOF > ${PATH_ARG}/vipakfile
+NAME    = ${APP}
+VERSION = 0.1.0
+
+AUTHOR  = 
+LICENSE = 
+
+DEPS    = 
+
+BUILD   = voc %projdir%/src/${MODULE}.Mod -s
+
+TEST    = voc %projdir%/test/${MODULE}Test.Mod -m ; ./${MODULE}Test
+EOF
+}
+
+create_src(){
+  paction "Creating ${PATHBASE}/src"
+  mkdir   -p "${PATH_ARG}/src"
+}
+
+create_src_prog(){
+  paction "Creating ${PATHBASE}/src/${MODULE}.Mod"
+  cat <<EOF > ${PATH_ARG}/src/${MODULE}.Mod
+MODULE ${MODULE};
+
+  IMPORT Out;
+
+PROCEDURE Hello*(s: ARRAY OF CHAR);
+BEGIN
+  Out.String("Hello ");
+  Out.String(s);
+  Out.Ln;
+END Hello;
+
+END ${MODULE}.
+EOF
+}
+
+create_test(){
+  paction "Creating ${PATHBASE}/test"
+  mkdir   -p "${PATH_ARG}/test"
+}
+
+create_test_progtest(){
+  paction "Creating ${PATHBASE}/test/${MODULE}Test.Mod"
+  cat <<EOF > ${PATH_ARG}/test/${MODULE}Test.Mod
+MODULE ${MODULE}Test;
+
+  IMPORT ${MODULE};
+
+BEGIN
+  ${MODULE}.Hello("world")
+END ${MODULE}Test.
+EOF
+}
+
+success_msg(){
+  pinfo 'All good!'
+}
+
+
+new_proj() {
+  shift  # remove 'new'
+
+  if [ $# -lt 1 ]; then
+    perror "missing PATH argument for '${PROGNAME} new'"
+  fi
+
+  PATH_ARG="$1"
+  PATHBASE="$(basename ${PATH_ARG})"
+  shift
+
+  MODULE=""
+  APP=""
+
+  # Parse optional flags
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --module)
+        shift
+        MODULE="$1"
+        ;;
+      --app)
+        shift
+        APP="$1"
+        ;;
+      *)
+        perror "unknown option '${1}'"
+        ;;
+    esac
+    shift
+  done
+
+  # --module is required if PATH is '.'
+  if [ -z "$MODULE" ]; then
+    if [ "$PATH_ARG" = "." ]; then
+      perror "--module is required when PATH is '.'"
+    fi
+
+    # Derive PascalCase module name from path
+    MODULE=$(printf "%s" "$PATHBASE" | awk -F'[_-]' '{
+    for (i = 1; i <= NF; i++)
+      {
+        $i = toupper(substr($i,1,1)) substr($i,2)
+      }
+      print $0
+    }' OFS='')
+  fi
+
+  # Validate MODULE as Oberon identifier
+  if ! printf "%s" "$MODULE" | grep -Eq '^[A-Za-z][A-Za-z0-9]*$'; then
+    perror "Invalid module name: '${MODULE}'" \
+      "Must match: letter {letter | digit}" \
+      "(no underscores, dashes, or leading digits)"
+  fi
+
+  # Default APP to basename of path
+  if [ -z "$APP" ]; then
+    APP="${PATHBASE}"
+  fi
+
+  # Output debug values
+  pinfo "PATH   : $PATH_ARG"
+  pinfo "MODULE : $MODULE"
+  pinfo "APP    : $APP"
+
+  check_path
+  create_path
+  create_readme
+  create_gitattributes
+  create_gitignore
+  create_vipakfile
+  create_src
+  create_src_prog
+  create_test
+  create_test_progtest
+  success_msg
+}
+
+
+_run_steps() {
+  key="$1"; dir="$2"
+
+  [ -f vipakfile ] || perror "vipakfile not found in current directory"
+
+  # pull everything after the first '='
+  line=$(grep -E "^${key}[[:space:]]*=" vipakfile \
+         | cut -d= -f2-)
+
+  # trim leading whitespace and replace %projdir% → ../
+  line=$(printf "%s" "$line" \
+         | sed -e 's/^[[:space:]]*//' -e 's|%projdir%|..|g')
+
+  paction "Running ${key} commands in '${dir}/'"
+
+  mkdir -p "$dir"
+  cd "$dir" || perror "cannot enter directory '$dir'"
+
+  # split on ';' and run each chunk
+  oldIFS=$IFS; IFS=';'
+  for cmd in $line; do
+    # trim whitespace
+    cmd=$(printf "%s" "$cmd" \
+          | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+    [ -z "$cmd" ] && continue
+
+    paction "Executing: $cmd"
+    eval "$cmd" || perror "${key} command failed: $cmd"
+  done
+  IFS=$oldIFS
+
+  pinfo "${key} complete"
+}
+
+build_proj() {
+  _run_steps BUILD build
+}
+
+test_proj() {
+  _run_steps TEST build
+}
+
+vix_main(){
+  [ $# -eq 0 ] && help_usage
+
+  case "$1" in
+    help)         help_usage         ;;
+    version)      help_version       ;;
+    new)          new_proj      "$@" ;;
+    build)        build_proj         ;;
+    test)         test_proj          ;;
+    *)            help_usage         ;;
+  esac
+}
+
+vix_main "$@"

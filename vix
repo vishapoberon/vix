@@ -3,17 +3,18 @@
 
 # set global variables
 PROGNAME=${0##*/}
-VERSION="0.1.0"
-PROGPATH=$(readlink -f "$0")
+VERSION="0.1.1"
 
 COLOUR_SET_R="\033[0;31m"
 COLOUR_SET_G="\033[0;32m"
-COLOUR_SET_Y="\033[0;33m"
 COLOUR_SET_B="\033[0;34m"
-COLOUR_SET_M="\033[0;35m"
-COLOUR_SET_C="\033[0;36m"
-COLOUR_SET_W="\033[0;37m"
 COLOUR_END="\033[0m"
+
+PROJECT_ROOT=$(pwd)
+host_os=$(uname -s)
+host_arch=$(uname -m)
+
+: "${VIX_TARGET_DIR:=build/${host_os}-${host_arch}}"
 
 
 help_usage(){
@@ -22,10 +23,11 @@ Usage: vix ...
   help
   version
   new PATH [--module MODULE] [--app APP]
+  run
   build
   test
-  run
   clean
+  release [--tarball]
 EOT
   exit 0
 }
@@ -48,20 +50,15 @@ pinfo(){
 }
 
 paction(){
-  printf "${COLOUR_SET_G}[\*] ${COLOUR_END} %s\n" "${@}" >&2
+  printf "${COLOUR_SET_G}[*] ${COLOUR_END} %s\n" "${@}" >&2
 }
 
 
 confirm_create_path(){
-  printf  "The directory \"${PATH_ARG}\" already exists."
-  printf  " Are you sure you want to continue?"
-  read -p " [yN] " yesno
-  echo "${yesno}"
-  exit 0
+  perror  "The directory \"${PATH_ARG}\" already exists."
 }
 
 check_path(){
-  #paction "check_path"
   stat "$PATH_ARG" >/dev/null 2>&1 && confirm_create_path
 }
 
@@ -72,7 +69,7 @@ create_path(){
 
 create_readme(){
   paction "Creating ${PATHBASE}/README.md"
-  cat <<EOF > ${PATH_ARG}/README.md
+  cat <<EOF > "${PATH_ARG}"/README.md
 # ${APP}
 
 **TODO: Add description**
@@ -94,7 +91,7 @@ EOF
 
 create_gitattributes(){
   paction "Creating ${PATHBASE}/.gitattributes"
-  cat <<EOF > ${PATH_ARG}/.gitattributes
+  cat <<EOF > "${PATH_ARG}"/.gitattributes
 # Set the language to Oberon
 *.Mod linguist-language=Oberon
 *.mod linguist-language=Oberon
@@ -103,7 +100,7 @@ EOF
 
 create_gitignore(){
   paction "Creating ${PATHBASE}/.gitignore"
-  cat <<EOF > ${PATH_ARG}/.gitignore
+  cat <<EOF > "${PATH_ARG}"/.gitignore
 build
 release
 EOF
@@ -111,18 +108,22 @@ EOF
 
 create_vipakfile(){
   paction "Creating ${PATHBASE}/vipakfile"
-  cat <<EOF > ${PATH_ARG}/vipakfile
-NAME    = ${APP}
-VERSION = 0.1.0
+  cat <<EOF > "${PATH_ARG}"/vipakfile
+NAME      = ${APP}
+VERSION   = 0.1.0
 
-AUTHOR  = 
-LICENSE = 
+AUTHOR    = 
+LICENSE   = 
 
-DEPS    = 
+DEPS      = 
 
-BUILD   = voc %projdir%/src/${MODULE}.Mod -s
+RUN       = ./${MODULE}Main
+MAIN      = %projdir%/src/${MODULE}Main.Mod
+BUILD     = %projdir%/src/${MODULE}.Mod
 
-TEST    = voc %projdir%/test/${MODULE}Test.Mod -m ; ./${MODULE}Test
+TEST_RUN  = ./${MODULE}Test
+TEST_MAIN = %projdir%/test/${MODULE}Test.Mod
+TEST      = 
 EOF
 }
 
@@ -133,21 +134,33 @@ create_src(){
 
 create_src_prog(){
   paction "Creating ${PATHBASE}/src/${MODULE}.Mod"
-  cat <<EOF > ${PATH_ARG}/src/${MODULE}.Mod
+  cat <<EOF > "${PATH_ARG}"/src/${MODULE}.Mod
 MODULE ${MODULE};
 
   IMPORT Out;
 
-PROCEDURE Hello*(s: ARRAY OF CHAR);
+PROCEDURE Run*(): INTEGER;
 BEGIN
-  Out.String("Hello ");
-  Out.String(s);
-  Out.Ln;
-END Hello;
+  RETURN 42
+END Run;
 
 END ${MODULE}.
 EOF
 }
+
+create_src_progmain(){
+  paction "Creating ${PATHBASE}/src/${MODULE}Main.Mod"
+  cat <<EOF > "${PATH_ARG}"/src/${MODULE}Main.Mod
+MODULE ${MODULE}Main;
+
+  IMPORT ${MODULE}, Out;
+
+BEGIN
+  Out.Int(${MODULE}.Run(), 0); Out.Ln;
+END ${MODULE}Main.
+EOF
+}
+
 
 create_test(){
   paction "Creating ${PATHBASE}/test"
@@ -156,31 +169,48 @@ create_test(){
 
 create_test_progtest(){
   paction "Creating ${PATHBASE}/test/${MODULE}Test.Mod"
-  cat <<EOF > ${PATH_ARG}/test/${MODULE}Test.Mod
+  cat <<EOF > "${PATH_ARG}"/test/${MODULE}Test.Mod
 MODULE ${MODULE}Test;
 
-  IMPORT ${MODULE};
+  IMPORT ${MODULE}, Out;
 
 BEGIN
-  ${MODULE}.Hello("world")
+  IF ${MODULE}.Run() = 42 THEN
+    Out.String("All works!")
+  ELSE
+    Out.String("Test Failed...")
+  END;
+  Out.Ln;
 END ${MODULE}Test.
 EOF
 }
 
 success_msg(){
   pinfo 'All good!'
+
+  cat <<EOF
+
+Your Oberon project was created successfully.
+You can use "vix" to build it, test it, and more:
+
+    cd ${PATHBASE}
+    vix build && vix test
+    vix run
+
+Run "vix help" for more commands.
+EOF
 }
 
 
 new_proj() {
-  shift  # remove 'new'
+  shift
 
   if [ $# -lt 1 ]; then
     perror "missing PATH argument for '${PROGNAME} new'"
   fi
 
   PATH_ARG="$1"
-  PATHBASE="$(basename ${PATH_ARG})"
+  PATHBASE=$(basename "${PATH_ARG}")
   shift
 
   MODULE=""
@@ -232,7 +262,6 @@ new_proj() {
     APP="${PATHBASE}"
   fi
 
-  # Output debug values
   pinfo "PATH   : $PATH_ARG"
   pinfo "MODULE : $MODULE"
   pinfo "APP    : $APP"
@@ -245,53 +274,127 @@ new_proj() {
   create_vipakfile
   create_src
   create_src_prog
+  create_src_progmain
   create_test
   create_test_progtest
   success_msg
 }
 
+_process_mods() {
+  key=$1; mode=$2
+  [ -f vipakfile ] || perror "vipakfile not found"
 
-_run_steps() {
-  key="$1"; dir="$2"
+  # grab & massage the RHS
+  line=$(
+    grep -E "^${key}[[:space:]]*=" vipakfile \
+      | cut -d= -f2- \
+      | sed -e 's/^[[:space:]]*//' \
+            -e "s|%projdir%|${PROJECT_ROOT}|g"
+  )
 
-  [ -f vipakfile ] || perror "vipakfile not found in current directory"
+  paction "Processing ${key} (${mode}) in '${VIX_TARGET_DIR}/'"
+  mkdir -p "${VIX_TARGET_DIR}"
+  cd "${VIX_TARGET_DIR}" || perror "cd to ${VIX_TARGET_DIR} failed"
 
-  # pull everything after the first '='
-  line=$(grep -E "^${key}[[:space:]]*=" vipakfile \
-         | cut -d= -f2-)
-
-  # trim leading whitespace and replace %projdir% → ../
-  line=$(printf "%s" "$line" \
-         | sed -e 's/^[[:space:]]*//' -e 's|%projdir%|..|g')
-
-  paction "Running ${key} commands in '${dir}/'"
-
-  mkdir -p "$dir"
-  cd "$dir" || perror "cannot enter directory '$dir'"
-
-  # split on ';' and run each chunk
   oldIFS=$IFS; IFS=';'
-  for cmd in $line; do
-    # trim whitespace
-    cmd=$(printf "%s" "$cmd" \
-          | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
-    [ -z "$cmd" ] && continue
+  for entry in $line; do
+    # trim
+    entry=$(printf "%s" "$entry" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+    [ -z "$entry" ] && continue
 
-    paction "Executing: $cmd"
-    eval "$cmd" || perror "${key} command failed: $cmd"
+    paction "voc ${mode} ${entry}"
+    voc "${mode}" "${entry}" 2>/dev/null \
+      || perror "${key} step failed: ${entry}"
   done
   IFS=$oldIFS
-
-  pinfo "${key} complete"
+  cd -
 }
 
+_run_cmds() {
+  key=$1
+  [ -f vipakfile ] || perror "vipakfile not found"
+
+  run_line=$(
+    grep -E "^${key}[[:space:]]*=" vipakfile \
+      | cut -d= -f2- \
+      | sed -e 's/^[[:space:]]*//'
+  )
+  [ -n "$run_line" ] || perror "${key} not set in vipakfile"
+
+  paction "Running ${key} in '${VIX_TARGET_DIR}/'"
+  cd "${VIX_TARGET_DIR}" || perror "cd to ${VIX_TARGET_DIR} failed"
+
+  oldIFS=$IFS; IFS=';'
+  for cmd in $run_line; do
+    cmd=$(printf "%s" "$cmd" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+    [ -z "$cmd" ] && continue
+
+    paction "Executing: ${cmd}"
+    eval "${cmd}" \
+      || perror "execution failed: ${cmd}"
+  done
+  IFS=$oldIFS
+  cd -
+}
+
+# now the four subcommands:
 build_proj() {
-  _run_steps BUILD build
+  _process_mods BUILD   -s
+  _process_mods MAIN    -m
+  pinfo "Build complete"
+}
+
+run_proj() {
+  _run_cmds RUN
 }
 
 test_proj() {
-  _run_steps TEST build
+  _process_mods TEST     -s
+  _process_mods TEST_MAIN -m
+  _run_cmds TEST_RUN
+  pinfo "All tests passed"
 }
+
+release_proj() {
+  [ -f vipakfile ] || perror "vipakfile not found in current directory"
+  _process_mods BUILD   -s
+  _process_mods MAIN    -M
+
+  release_subdir="${VIX_TARGET_DIR}/release"
+  paction "Creating release directory '${release_subdir}'"
+  mkdir -p "${release_subdir}"
+
+  # 4) copy each MAIN binary into release/
+  main_line=$(
+    grep -E '^MAIN[[:space:]]*=' vipakfile \
+      | cut -d= -f2- \
+      | sed -e 's/^[[:space:]]*//' \
+            -e "s|%projdir%|${PROJECT_ROOT}|g"
+  )
+
+  oldIFS=$IFS; IFS=';'
+  for entry in $main_line; do
+    entry=$(printf "%s" "$entry" \
+            | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+    [ -z "$entry" ] && continue
+
+    bin=$(basename "$entry" .Mod)
+    paction "Copying '${bin}' → '${release_subdir}/'"
+    cp "${VIX_TARGET_DIR}/${bin}" "${release_subdir}/" \
+      || perror "failed to install release binary: ${bin}"
+  done
+  IFS=$oldIFS
+
+  pinfo "Release ready in '${release_subdir}'"
+}
+
+clean_proj() {
+  paction "Removing build artifacts in '${VIX_TARGET_DIR}'"
+  rm -rf "${VIX_TARGET_DIR}" \
+    || perror "failed to remove '${VIX_TARGET_DIR}'"
+  pinfo "Clean complete"
+}
+
 
 vix_main(){
   [ $# -eq 0 ] && help_usage
@@ -302,6 +405,9 @@ vix_main(){
     new)          new_proj      "$@" ;;
     build)        build_proj         ;;
     test)         test_proj          ;;
+    run)          run_proj           ;;
+    release)      release_proj       ;;
+    clean)        clean_proj         ;;
     *)            help_usage         ;;
   esac
 }

@@ -3,7 +3,7 @@
 
 # set global variables
 PROGNAME=${0##*/}
-VERSION="0.1.1"
+VERSION="0.1.2"
 
 COLOUR_SET_R="\033[0;31m"
 COLOUR_SET_G="\033[0;32m"
@@ -317,7 +317,8 @@ _run_cmds() {
   run_line=$(
     grep -E "^${key}[[:space:]]*=" vipakfile \
       | cut -d= -f2- \
-      | sed -e 's/^[[:space:]]*//'
+      | sed -e 's/^[[:space:]]*//' \
+            -e "s|%projdir%|${PROJECT_ROOT}|g"
   )
   [ -n "$run_line" ] || perror "${key} not set in vipakfile"
 

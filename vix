@@ -3,7 +3,7 @@
 
 # set global variables
 PROGNAME=${0##*/}
-VERSION="0.1.4"
+VERSION="0.1.5"
 
 COLOUR_SET_R="\033[0;31m"
 COLOUR_SET_G="\033[0;32m"
@@ -309,7 +309,7 @@ _process_mods() {
       || perror "${key} step failed: ${entry}"
   done
   IFS=$oldIFS
-  cd -
+  cd - 2>/dev/null
 }
 
 _run_cmds() {
@@ -337,7 +337,7 @@ _run_cmds() {
       || perror "execution failed: ${cmd}"
   done
   IFS=$oldIFS
-  cd -
+  cd - 2>/dev/null
 }
 
 # now the four subcommands:

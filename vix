@@ -3,7 +3,7 @@
 
 # set global variables
 PROGNAME=${0##*/}
-VERSION="0.1.5"
+VERSION="0.1.6-dev"
 
 COLOUR_SET_R="\033[0;31m"
 COLOUR_SET_G="\033[0;32m"
@@ -134,7 +134,7 @@ create_src(){
 
 create_src_prog(){
   paction "Creating ${PATHBASE}/src/${MODULE}.Mod"
-  cat <<EOF > "${PATH_ARG}"/src/${MODULE}.Mod
+  cat <<EOF > "${PATH_ARG}"/src/"${MODULE}".Mod
 MODULE ${MODULE};
 
   IMPORT Out;
@@ -150,7 +150,7 @@ EOF
 
 create_src_progmain(){
   paction "Creating ${PATHBASE}/src/${MODULE}Main.Mod"
-  cat <<EOF > "${PATH_ARG}"/src/${MODULE}Main.Mod
+  cat <<EOF > "${PATH_ARG}"/src/"${MODULE}"Main.Mod
 MODULE ${MODULE}Main;
 
   IMPORT ${MODULE}, Out;
@@ -169,7 +169,7 @@ create_test(){
 
 create_test_progtest(){
   paction "Creating ${PATHBASE}/test/${MODULE}Test.Mod"
-  cat <<EOF > "${PATH_ARG}"/test/${MODULE}Test.Mod
+  cat <<EOF > "${PATH_ARG}"/test/"${MODULE}"Test.Mod
 MODULE ${MODULE}Test;
 
   IMPORT ${MODULE}, Out;
@@ -309,7 +309,7 @@ _process_mods() {
       || perror "${key} step failed: ${entry}"
   done
   IFS=$oldIFS
-  cd - 2>/dev/null
+  cd - 2>/dev/null || return
 }
 
 _run_cmds() {
@@ -337,7 +337,7 @@ _run_cmds() {
       || perror "execution failed: ${cmd}"
   done
   IFS=$oldIFS
-  cd - 2>/dev/null
+  cd - 2>/dev/null || return
 }
 
 # now the four subcommands:
